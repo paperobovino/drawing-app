@@ -1,0 +1,262 @@
+<!-- v1.5 PNGとJSONのエクスポートボタンを別に -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>グリッド描画アプリ</title>
+  <style>
+    canvas { border: 1px solid #000; display: block; }
+    #toolbar {
+      margin: 10px 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+    }
+    label { user-select: none; }
+    input[type="file"] { display: none; }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <!-- ラジオボタンでモード選択 -->
+    <fieldset style="border: none;">
+      <label><input type="radio" name="mode" value="line" checked onchange="setModeFromRadio()"> 直線</label>
+      <label><input type="radio" name="mode" value="fill" onchange="setModeFromRadio()"> 塗りつぶし</label>
+    </fieldset>
+
+    <!-- 表示ON/OFF -->
+    <label><input type="checkbox" id="gridToggle" checked onchange="drawGrid()"> グリッド線</label>
+    <label><input type="checkbox" id="showFill" checked onchange="drawGrid()"> 塗りを表示</label>
+    <label><input type="checkbox" id="showLine" checked onchange="drawGrid()"> 線を表示</label>
+
+    <!-- 消去 -->
+    <button onclick="clearFill()">塗りをクリア</button>
+    <button onclick="clearLine()">線をクリア</button>
+
+    <!-- エクスポート -->
+    <button onclick="exportJSON()">JSONエクスポート</button>
+    <button onclick="exportPNG()">PNGエクスポート</button>
+
+    <!-- インポート -->
+    <button onclick="document.getElementById('fileInput').click()">インポート</button>
+    <input type="file" id="fileInput" accept=".json">
+  </div>
+
+  <canvas id="canvas" width="500" height="500"></canvas>
+
+  <script>
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+
+    const rows = 10;
+    const cols = 10;
+    const cellSize = canvas.width / cols;
+    let mode = "line";
+
+    let filledTriangles = [];
+    let drawnLines = [];
+
+    function setModeFromRadio() {
+      const selected = document.querySelector('input[name="mode"]:checked');
+      if (selected) {
+        mode = selected.value;
+      }
+    }
+
+    function drawGrid() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const showGrid = document.getElementById("gridToggle").checked;
+      const showFill = document.getElementById("showFill").checked;
+      const showLine = document.getElementById("showLine").checked;
+
+      if (showGrid) {
+        ctx.strokeStyle = "#ccc";
+        for (let i = 0; i <= cols; i++) {
+          ctx.beginPath();
+          ctx.moveTo(i * cellSize, 0);
+          ctx.lineTo(i * cellSize, canvas.height);
+          ctx.stroke();
+        }
+        for (let i = 0; i <= rows; i++) {
+          ctx.beginPath();
+          ctx.moveTo(0, i * cellSize);
+          ctx.lineTo(canvas.width, i * cellSize);
+          ctx.stroke();
+        }
+
+        ctx.strokeStyle = "#eee";
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) {
+            const x0 = x * cellSize;
+            const y0 = y * cellSize;
+            ctx.beginPath();
+            ctx.moveTo(x0, y0);
+            ctx.lineTo(x0 + cellSize, y0 + cellSize);
+            ctx.stroke();
+          }
+        }
+      }
+
+      if (showFill) {
+        for (const t of filledTriangles) {
+          drawTriangle(ctx, t.col, t.row, t.upper, t.color);
+        }
+      }
+
+      if (showLine) {
+        for (const l of drawnLines) {
+          drawLine(ctx, l.col, l.row, l.color);
+        }
+      }
+    }
+
+    function drawTriangle(context, col, row, upper, color = "rgba(0,150,255,0.5)") {
+      const x = col * cellSize;
+      const y = row * cellSize;
+      context.fillStyle = color;
+      context.beginPath();
+      if (upper) {
+        context.moveTo(x, y);
+        context.lineTo(x + cellSize, y);
+        context.lineTo(x + cellSize, y + cellSize);
+      } else {
+        context.moveTo(x, y);
+        context.lineTo(x, y + cellSize);
+        context.lineTo(x + cellSize, y + cellSize);
+      }
+      context.closePath();
+      context.fill();
+    }
+
+    function drawLine(context, col, row, color = "black") {
+      const x = col * cellSize;
+      const y = row * cellSize;
+      context.strokeStyle = color;
+      context.beginPath();
+      context.moveTo(x, y);
+      context.lineTo(x + cellSize, y + cellSize);
+      context.stroke();
+    }
+
+    canvas.addEventListener("click", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const col = Math.floor(x / cellSize);
+      const row = Math.floor(y / cellSize);
+      const cellX = col * cellSize;
+      const cellY = row * cellSize;
+
+      if (mode === "line") {
+        const index = drawnLines.findIndex(l => l.col === col && l.row === row);
+        if (index !== -1) {
+          drawnLines.splice(index, 1);
+        } else {
+          drawnLines.push({ col, row, color: "black" });
+        }
+      } else if (mode === "fill") {
+        const localX = x - cellX;
+        const localY = y - cellY;
+        const isUpper = (localY < localX);
+        const index = filledTriangles.findIndex(t =>
+          t.col === col && t.row === row && t.upper === isUpper
+        );
+        if (index !== -1) {
+          filledTriangles.splice(index, 1);
+        } else {
+          filledTriangles.push({ col, row, upper: isUpper, color: "rgba(0,150,255,0.5)" });
+        }
+      }
+
+      drawGrid();
+    });
+
+    function clearFill() {
+      filledTriangles = [];
+      drawGrid();
+    }
+
+    function clearLine() {
+      drawnLines = [];
+      drawGrid();
+    }
+
+    function exportJSON() {
+      const data = {
+        triangles: filledTriangles,
+        lines: drawnLines
+      };
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "drawing.json";
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    }
+
+    function exportPNG() {
+      const gridCheckbox = document.getElementById("gridToggle");
+      const originalGridState = gridCheckbox.checked;
+      gridCheckbox.checked = false;
+
+      const offCanvas = document.createElement("canvas");
+      offCanvas.width = canvas.width;
+      offCanvas.height = canvas.height;
+      const offCtx = offCanvas.getContext("2d");
+
+      offCtx.fillStyle = "white";
+      offCtx.fillRect(0, 0, offCanvas.width, offCanvas.height);
+
+      for (const t of filledTriangles) {
+        drawTriangle(offCtx, t.col, t.row, t.upper, t.color);
+      }
+      for (const l of drawnLines) {
+        drawLine(offCtx, l.col, l.row, l.color);
+      }
+
+      offCanvas.toBlob(blob => {
+        const pngUrl = URL.createObjectURL(blob);
+        const pngLink = document.createElement("a");
+        pngLink.href = pngUrl;
+        pngLink.download = "drawing.png";
+        document.body.appendChild(pngLink);
+        pngLink.click();
+        document.body.removeChild(pngLink);
+        URL.revokeObjectURL(pngUrl);
+
+        gridCheckbox.checked = originalGridState;
+        drawGrid();
+      }, "image/png");
+    }
+
+    document.getElementById("fileInput").addEventListener("change", (event) => {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const data = JSON.parse(e.target.result);
+          if (data.triangles && data.lines) {
+            filledTriangles = data.triangles;
+            drawnLines = data.lines;
+            drawGrid();
+          } else {
+            alert("無効なJSON形式です");
+          }
+        } catch (err) {
+          alert("JSONの読み込みに失敗しました");
+        }
+      };
+      reader.readAsText(file);
+    });
+
+    drawGrid();
+  </script>
+</body>
+</html>
